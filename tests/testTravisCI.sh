@@ -97,12 +97,11 @@ case $TEST in
     createStone $opt ${STONENAME1}_${UPGRADE_FROM} ${UPGRADE_FROM}
     upgradeStoneName="${STONENAME1}_${GS_VERSION}"
 		set +e
-    upgradeStone -f ${STONENAME1}_${UPGRADE_FROM} ${STONENAME1}_${GS_VERSION} $GS_VERSION << EOF
+    upgradeStone -f ${TOPAZWAITFORDEBUG} ${STONENAME1}_${UPGRADE_FROM} ${STONENAME1}_${GS_VERSION} $GS_VERSION << EOF
 
 EOF
 		status=$?
 		echo "UPGRADE FINISHED WITH $status exit status"
-		set -x
     stopStone -b ${STONENAME1}_${UPGRADE_FROM}
     stopStone -b ${STONENAME1}_${GS_VERSION}
     if [ "$status" != "0" ] ; then
@@ -153,10 +152,13 @@ EOF
     ;;
   Upgrade_unittest)
     installServer
+    if [ "${UPGRADE_FROM}" = "2.4.4.1" ] ; then
+      opt="-g"
+    fi
     createStone $opt ${STONENAME1}_${UPGRADE_FROM} ${UPGRADE_FROM}
     upgradeStoneName="${STONENAME1}_${GS_VERSION}"
 		set +e
-    upgradeStone -f ${STONENAME1}_${UPGRADE_FROM} $upgradeStoneName $GS_VERSION << EOF
+    upgradeStone -f ${TOPAZWAITFORDEBUG} ${STONENAME1}_${UPGRADE_FROM} $upgradeStoneName $GS_VERSION << EOF
 
 EOF
     status=$?
@@ -226,36 +228,44 @@ EOF
     stopStone -b $upgradeStoneName
 		exit $status
 		;;
-  Upgrade_71) # Issue #71: test case ... upgrade from 3.2.11
+  Upgrade_71) # Issue #71: test case ... upgrade from 3.2.11; tode not installed
     installServer
-    createStone -g ${STONENAME1}_3211 3.2.11
-    upgradeStoneName="${STONENAME1}_${GS_VERSION}"
+		if [ "$UPGRADE_FROM"x = "x" ] ; then
+			upgradeFromStoneName="${STONENAME1}_3211"
+			upgradeFromVersion="3.2.11"
+		else
+			upgradeFromStoneName="${STONENAME1}_${UPGRADE_FROM}"
+			upgradeFromVersion="${UPGRADE_FROM}"
+		fi
+	  createStone -g ${upgradeFromStoneName} ${upgradeFromVersion}
+  	upgradeStoneName="${STONENAME1}_${GS_VERSION}"
     set +e
-    upgradeStone -f ${STONENAME1}_3211 ${STONENAME1}_${GS_VERSION} $GS_VERSION << EOF
+    upgradeStone -f ${upgradeFromStoneName} ${STONENAME1}_${GS_VERSION} $GS_VERSION << EOF
 
 EOF
     status=$?
 		echo "UPGRADE FINISHED WITH $status exit status"
-    stopStone -b ${STONENAME1}_3211
-    stopStone -b ${STONENAME1}_${GS_VERSION}
-    if [ "$status" != "0" ] ; then
-      tail -500 $GS_HOME/server/stones/$upgradeStoneName/upgradeLog/topazerrors.log
-			if [ -e "$GS_HOME/server/stones/$upgradeStoneName/upgradeLog/upgradeSeasideImage.out" ] ; then 
-        tail -500 $GS_HOME/server/stones/$upgradeStoneName/upgradeLog/upgradeSeasideImage.out
-      fi
-      if [ -e "$GS_HOME/server/stones/$upgradeStoneName/upgradeLog/upgradeImage.out" ] ; then 
-        tail -500 $GS_HOME/server/stones/$upgradeStoneName/upgradeLog/upgradeImage.out
-      fi
-      if [ -e "$GS_HOME/server/stones/$upgradeStoneName/upgradeLog/upgradeTo3x.out" ] ; then 
-        tail -500 $GS_HOME/server/stones/$upgradeStoneName/upgradeLog/upgradeTo3x.out
-      fi
-      if [ -e "$GS_HOME/server/stones/$upgradeStoneName/upgradeLog/topaz.out" ] ; then 
-        tail -500 $GS_HOME/server/stones/$upgradeStoneName/upgradeLog/topaz.out
-      fi
-      exit 1
-    else
-      exit 0
+    if [ "$status" = "0" ] ; then
+			startStone ${upgradeFromStoneName}	#stopped during upgrade
+			if [ "$upgradeFromVersion" != "3.2.11" ] ; then
+				# 3.2.11 unit tests fail with "too many sessions error", so skip the tests
+				set -e # if script fails for reason other than unit test failures, bail
+				echo "running unit test health check (${upgradeFromVersion})"
+				$GS_HOME/tests/unitTests.sh ${upgradeFromStoneName} false # don't fail if unit tests fail
+				echo "finished unit test health check(${upgradeFromVersion})"
+			fi
+			set +e
+			echo "running unit test on upgraded stone (${GS_VERSION})"
+			$GS_HOME/tests/unitTests.sh $upgradeStoneName true #fail if unit tests don't pass
+			status=$?
+			echo "finished unit test  on upgraded stone(${GS_VERSION})"
+			if [ "$status" != "0" ] ; then
+				echo "unit tests failed after upgrade"
+			fi
     fi
+    stopStone -b ${STONENAME1}_${UPGRADE_FROM}
+    stopStone -b $upgradeStoneName
+		exit $status
     ;;
   BasicTodeClient)
     $GS_HOME/tests/basicTodeClientTests.sh
