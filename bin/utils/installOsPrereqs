@@ -167,7 +167,7 @@ fi
 
 # Detect operating system
 PLATFORM="`uname -sm | tr ' ' '-'`"
-# Macs with Core i7 use the same software as older Macs
+# Macs with Core i7 and Apple M1 use the same software as older Macs
 [ $PLATFORM = "Darwin-x86_64" ] && PLATFORM="Darwin-i386"
 
 if [ -e "$sharedMemorySysSetup" ]; then
@@ -184,6 +184,9 @@ else
       if [[ $CPU_CAPABLE -ne 1 || $MAJOR -lt 10 || $MINOR -lt 5 ]] ; then
           exit_1_banner "This script requires Mac OS X 10.5 or later on a 64-bit Intel CPU."
       fi
+      ;;
+    Darwin-arm64)
+      OSVERSION="`sw_vers -productVersion`"
       ;;
     Linux-x86_64)
       # Linux looks OK
@@ -215,7 +218,7 @@ else
     # Figure out the max shared memory currently allowed
     shmall=`cat /proc/sys/kernel/shmall`
     ;;
-  Darwin-i386)
+  Darwin-i386|Darwin-arm64)
     totalMem="`sysctl hw.memsize | cut -f2 -d' '`"
     # Figure out the max shared memory segment size currently allowed
     shmmax="`sysctl kern.sysv.shmmax | cut -f2 -d' '`"
@@ -253,7 +256,7 @@ else
   # Increase shmmax if appropriate
   if [[ $shmmaxNew -gt $shmmax ]]; then
     echo "[Info] Increasing max shared memory segment size to $shmmaxNewMB MB"
-    [ $PLATFORM = "Darwin-i386" ] \
+    [ $PLATFORM = "Darwin-i386" ] || [ $PLATFORM = "Darwin-arm64" ] \
       && sudo sysctl -w kern.sysv.shmmax=$shmmaxNew
     [ $PLATFORM = "Linux-x86_64" ] \
       && sudo bash -c "echo $shmmaxNew > /proc/sys/kernel/shmmax" \
@@ -265,7 +268,7 @@ else
   # Increase shmall if appropriate
   if [ $shmallNew -gt $shmall ]; then
     echo "[Info] Increasing max shared memory allowed to $shmallNewMB MB"
-    [ $PLATFORM = "Darwin-i386" ] && sudo sysctl -w kern.sysv.shmall=$shmallNew
+    [ $PLATFORM = "Darwin-i386" ] || [ $PLATFORM = "Darwin-arm64" ] && sudo sysctl -w kern.sysv.shmall=$shmallNew
     [ $PLATFORM = "Linux-x86_64" ] \
       && sudo bash -c "echo $shmallNew > /proc/sys/kernel/shmall" \
       && sudo /bin/su -c "echo 'kernel.shmall=$shmallNew' >>/etc/sysctl.conf"
@@ -275,7 +278,7 @@ else
   # At this point, shared memory settings contain the values we want, 
   # put them in sysctl.conf so they are preserved.
   # Only needs to be done on OSX (see https://github.com/GsDevKit/GsDevKit_home/issues/46)
-  if [ "$PLATFORM" = "Darwin-i386" ] ; then
+  if [ $PLATFORM = "Darwin-i386" ] || [ $PLATFORM = "Darwin-arm64" ] ; then
     if [[ ! -f /etc/sysctl.conf || `grep -sc "kern.*m" /etc/sysctl.conf` -eq 0 ]]; then
       # On Mac OS X Leopard, you must have all five settings in sysctl.conf
       # before they will take effect.
